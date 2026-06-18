@@ -17,7 +17,22 @@ async function getAccessToken() {
     }
   );
 
-  const data = await response.json();
+  const textoProdutos = await response.text();
+
+let data;
+
+try {
+
+  data = JSON.parse(textoProdutos);
+
+} catch (e) {
+
+  return res.status(500).json({
+    erro: "Erro ao listar produtos",
+    resposta: textoProdutos
+  });
+
+}
 
   return data.access_token;
 }
@@ -78,7 +93,22 @@ export default async function handler(req, res) {
           continue;
         }
 
-        const custos = JSON.parse(texto);
+        let custos;
+
+try {
+
+  custos = JSON.parse(texto);
+
+} catch (e) {
+
+  resultado.push({
+    erroProduto: produto.id,
+    sku: produto.sku,
+    resposta: texto
+  });
+
+  continue;
+}
 
         if (!custos.itens) {
           continue;
