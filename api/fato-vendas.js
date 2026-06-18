@@ -18,7 +18,6 @@ async function getAccessToken() {
   );
 
   const data = await response.json();
-
   return data.access_token;
 }
 
@@ -27,35 +26,113 @@ export default async function handler(req, res) {
 
     const token = await getAccessToken();
 
-    // Busca apenas 1 pedido
-    const response = await fetch(
-      "https://api.tiny.com.br/public-api/v3/pedidos?limit=1",
-      {
-        headers: {
-          Authorization: `Bearer ${token}`,
-        },
+    // Buscar todos os pedidos
+    let pedidos = [];
+    let offset = 0;
+    let total = 1;
+    const limit = 100;
+
+    while (offset < total) {
+
+      const response = await fetch(
+        `https://api.tiny.com.br/public-api/v3/pedidos?limit=${limit}&offset=${offset}`,
+        {
+          headers: {
+            Authorization: `Bearer ${token}`,
+          },
+        }
+      );
+
+      const data = await response.json();
+
+      pedidos = [...pedidos, ...data.itens];
+
+      total = data.paginacao.total;
+      offset += limit;
+    }
+
+    let vendas = [];
+
+    // Buscar detalhes de cada pedido
+    for (const pedido of pedidos) {
+
+      const detalheResponse = await fetch(
+        `https://api.tiny.com.br/public-api/v3/pedidos/${pedido.id}`,
+        {
+          headers: {
+            Authorization: `Bearer ${token}`,
+          },
+        }
+      );
+
+      if (!detalheResponse.ok) {
+        continue;
       }
-    );
 
-    const pedidos = await response.json();
+      const detalhe = await detalheResponse.json();
 
-    const primeiroPedido = pedidos.itens[0];
-
-    // Busca o detalhe desse pedido
-    const detalheResponse = await fetch(
-      `https://api.tiny.com.br/public-api/v3/pedidos/${primeiroPedido.id}`,
-      {
-        headers: {
-          Authorization: `Bearer ${token}`,
-        },
+      if (!detalhe.itens) {
+        continue;
       }
-    );
 
-    const detalhe = await detalheResponse.json();
+      for (const item of detalhe.itens) {
+
+        vendas.push({
+
+          data: detalhe.data,
+
+          pedidoTiny: detalhe.numeroPedido,
+
+          pedidoMarketplace:
+            detalhe.ecommerce?.numeroPedidoEcommerce || "",
+
+          canal:
+            detalhe.ecommerce?.nome || "",
+
+          notaFiscal:
+            detalhe.idNotaFiscal || "",
+
+          sku:
+            item.produto?.sku || "",
+
+          produto:
+            item.produto?.descricao || "",
+
+          quantidade:
+            item.quantidade || 0,
+
+          valorUnitario:
+            item.valorUnitario || 0,
+
+          valorProdutos:
+            detalhe.valorTotalProdutos || 0,
+
+          valorFrete:
+            detalhe.valorFrete || 0,
+
+          valorDesconto:
+            detalhe.valorDesconto || 0,
+
+          valorOutrasDespesas:
+            detalhe.valorOutrasDespesas || 0,
+
+          cidade:
+            detalhe.cliente?.endereco?.municipio || "",
+
+          uf:
+            detalhe.cliente?.endereco?.uf || ""
+
+        });
+
+      }
+
+      // evita rate limit do Tiny
+      await new Promise(resolve => setTimeout(resolve, 150));
+    }
 
     return res.status(200).json({
-      pedidoId: primeiroPedido.id,
-      detalhe
+      total: vendas.length,
+      vendas
     });
 
   } catch (error) {
