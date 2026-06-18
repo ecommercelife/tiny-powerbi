@@ -36,14 +36,40 @@ export default async function handler(req, res) {
 
     while (offset < total) {
 
-      const response = await fetch(
-        `https://api.tiny.com.br/public-api/v3/pedidos?limit=${limit}&offset=${offset}`,
-        {
-          headers: {
-            Authorization: `Bearer ${token}`,
-          },
-        }
-      );
+      const detalheResponse = await fetch(
+  `https://api.tiny.com.br/public-api/v3/pedidos/${pedido.id}`,
+  {
+    headers: {
+      Authorization: `Bearer ${token}`,
+    },
+  }
+);
+
+if (!detalheResponse.ok) {
+
+  vendas.push({
+    erroPedido: pedido.id,
+    status: detalheResponse.status
+  });
+
+  continue;
+}
+
+const texto = await detalheResponse.text();
+
+let detalhe;
+
+try {
+  detalhe = JSON.parse(texto);
+} catch {
+
+  vendas.push({
+    erroPedido: pedido.id,
+    resposta: texto
+  });
+
+  continue;
+}
 
       const data = await response.json();
 
@@ -67,7 +93,20 @@ export default async function handler(req, res) {
         }
       );
 
-      const detalhe = await detalheResponse.json();
+      const texto = await detalheResponse.text();
+
+let detalhe;
+
+try {
+  detalhe = JSON.parse(texto);
+} catch (e) {
+  vendas.push({
+    erroPedido: pedido.id,
+    resposta: texto
+  });
+
+  continue;
+}
 
       detalhe.itens.forEach(item => {
 
