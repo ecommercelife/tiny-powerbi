@@ -17,30 +17,29 @@ async function getAccessToken() {
     }
   );
 
-  const textoProdutos = await response.text();
+  const texto = await response.text();
 
-let data;
+  if (!texto) {
+    throw new Error("Token vazio retornado pela Tiny");
+  }
 
-try {
+  let data;
 
-  data = JSON.parse(textoProdutos);
+  try {
+    data = JSON.parse(texto);
+  } catch {
+    throw new Error(`Erro ao interpretar token: ${texto}`);
+  }
 
-} catch (e) {
-
-  return res.status(500).json({
-    erro: "Erro ao listar produtos",
-    resposta: textoProdutos
-  });
-
-}
+  if (!data.access_token) {
+    throw new Error(`Access token não retornado: ${texto}`);
+  }
 
   return data.access_token;
 }
 
 export default async function handler(req, res) {
-
   try {
-
     const token = await getAccessToken();
 
     let produtos = [];
@@ -49,7 +48,6 @@ export default async function handler(req, res) {
     const limit = 100;
 
     while (offset < total) {
-
       const response = await fetch(
         `https://api.tiny.com.br/public-api/v3/produtos?limit=${limit}&offset=${offset}`,
         {
@@ -59,7 +57,23 @@ export default async function handler(req, res) {
         }
       );
 
-      const data = await response.json();
+      const texto = await response.text();
+
+      if (!texto) {
+        throw new Error(
+          `Resposta vazia ao listar produtos. Offset: ${offset}`
+        );
+      }
+
+      let data;
+
+      try {
+        data = JSON.parse(texto);
+      } catch {
+        throw new Error(
+          `Erro ao interpretar listagem de produtos: ${texto}`
+        );
+      }
 
       produtos = [...produtos, ...(data.itens || [])];
 
@@ -71,9 +85,7 @@ export default async function handler(req, res) {
     const resultado = [];
 
     for (const produto of produtos) {
-
       try {
-
         const response = await fetch(
           `https://api.tiny.com.br/public-api/v3/produtos/${produto.id}/custos`,
           {
@@ -84,81 +96,77 @@ export default async function handler(req, res) {
         );
 
         if (!response.ok) {
+          resultado.push({
+            erroProduto: produto.id,
+            sku: produto.sku,
+            status: response.status,
+          });
+
           continue;
         }
 
         const texto = await response.text();
 
         if (!texto) {
+          resultado.push({
+            erroProduto: produto.id,
+            sku: produto.sku,
+            erro: "Resposta vazia",
+          });
+
           continue;
         }
 
         let custos;
 
-try {
+        try {
+          custos = JSON.parse(texto);
+        } catch {
+          resultado.push({
+            erroProduto: produto.id,
+            sku: produto.sku,
+            erro: "JSON inválido",
+            resposta: texto,
+          });
 
-  custos = JSON.parse(texto);
+          continue;
+        }
 
-} catch (e) {
-
-  resultado.push({
-    erroProduto: produto.id,
-    sku: produto.sku,
-    resposta: texto
-  });
-
-  continue;
-}
-
-        if (!custos.itens) {
+        if (!custos.itens || !Array.isArray(custos.itens)) {
           continue;
         }
 
         for (const custo of custos.itens) {
-
           resultado.push({
-
             idProduto: produto.id,
-
             sku: produto.sku,
-
             produto: produto.descricao,
-
             dataCusto: custo.data,
-
             precoCusto: custo.precoCusto,
-
             custoMedio: custo.custoMedio,
-
             saldoAnterior: custo.saldoAnterior,
-
-            saldoAtual: custo.saldoAtual
-
+            saldoAtual: custo.saldoAtual,
           });
-
         }
 
-        await new Promise(resolve =>
-          setTimeout(resolve, 150)
-        );
-
+        await new Promise((resolve) => setTimeout(resolve, 150));
       } catch (e) {
-
+        resultado.push({
+          erroProduto: produto.id,
+          sku: produto.sku,
+          erro: e.message,
+        });
       }
-
     }
 
     return res.status(200).json({
       total: resultado.length,
-      custos: resultado
+      custos: resultado,
     });
-
   } catch (error) {
-
     return res.status(500).json({
-      erro: error.message
+      erro: error.message,
+      stack: error.stack,
     });
-
   }
-
 }
