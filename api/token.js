@@ -1,4 +1,5 @@
 export default async function handler(req, res) {
+
   const params = new URLSearchParams();
 
   params.append("grant_type", "refresh_token");
@@ -19,11 +20,13 @@ export default async function handler(req, res) {
 
   const data = await response.json();
 
-  return res.status(response.status).json({
-    sucesso: response.ok,
-    possuiAccessToken: !!data.access_token,
-    expires_in: data.expires_in,
-    erro: data.error,
-    descricao: data.error_description,
+  if (!data.access_token) {
+    return res.status(500).json(data);
+  }
+
+  return res.status(200).json({
+    access_token: data.access_token,
+    expires_in: data.expires_in
   });
+
 }
