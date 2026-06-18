@@ -68,9 +68,10 @@ export default async function handler(req, res) {
       pedidos = [...pedidos, ...data.itens];
 
       total = data.paginacao.total;
-
       offset += limit;
     }
+
+    const cacheCustos = {};
 
     let vendas = [];
 
@@ -85,7 +86,15 @@ export default async function handler(req, res) {
         }
       );
 
+      if (!detalheResponse.ok) {
+        continue;
+      }
+
       const detalhe = await detalheResponse.json();
+
+      if (!detalhe.itens) {
+        continue;
+      }
 
       for (const item of detalhe.itens) {
 
@@ -94,18 +103,74 @@ export default async function handler(req, res) {
         let custoUnitario = null;
         let custoMedio = null;
 
-        try {
+        if (!cacheCustos[idProduto]) {
 
-          const custoResponse = await fetch(
-            `https://api.tiny.com.br/public-api/v3/produtos/${idProduto}/custos`,
-            {
-              headers: {
-                Authorization: `Bearer ${token}`,
-              },
+          try {
+
+            const custoResponse = await fetch(
+              `https://api.tiny.com.br/public-api/v3/produtos/${idProduto}/custos`,
+              {
+                headers: {
+                  Authorization: `Bearer ${token}`,
+                },
+              }
+            );
+
+            if (!custoResponse.ok) {
+
+              cacheCustos[idProduto] = {
+                erro: `HTTP ${custoResponse.status}`
+              };
+
+            } else {
+
+              const texto = await custoResponse.text();
+
+              if (!texto) {
+
+                cacheCustos[idProduto] = {
+                  erro: "Resposta vazia"
+                };
+
+              } else {
+
+                try {
+
+                  cacheCustos[idProduto] = JSON.parse(texto);
+
+                } catch {
+
+                  cacheCustos[idProduto] = {
+                    erro: "JSON inválido"
+                  };
+
+                }
+
+              }
+
             }
-          );
 
-          const custoData = await custoResponse.json();
+            await new Promise(resolve =>
+              setTimeout(resolve, 100)
+            );
+
+          } catch (e) {
+
+            cacheCustos[idProduto] = {
+              erro: e.message
+            };
+
+          }
+
+        }
+
+        const custoData = cacheCustos[idProduto];
+
+        if (
+          custoData &&
+          custoData.itens &&
+          custoData.itens.length > 0
+        ) {
 
           const custoHistorico = obterCustoDaVenda(
             detalhe.data,
@@ -113,11 +178,13 @@ export default async function handler(req, res) {
           );
 
           if (custoHistorico) {
+
             custoUnitario = custoHistorico.precoCusto;
             custoMedio = custoHistorico.custoMedio;
+
           }
 
-        } catch (e) {}
+        }
 
         const quantidade = item.quantidade || 0;
         const valorUnitario = item.valorUnitario || 0;
@@ -126,7 +193,10 @@ export default async function handler(req, res) {
 
           data: detalhe.data,
 
-          pedidoTiny: detalhe.numeroPedido,
+          idProduto,
+
+          pedidoTiny:
+            detalhe.numeroPedido,
 
           pedidoMarketplace:
             detalhe.ecommerce?.numeroPedidoEcommerce || "",
@@ -136,8 +206,6 @@ export default async function handler(req, res) {
 
           notaFiscal:
             detalhe.idNotaFiscal || "",
-
-          idProduto,
 
           sku:
             item.produto?.sku || "",
@@ -157,12 +225,12 @@ export default async function handler(req, res) {
           custoMedio,
 
           cmv:
-            custoUnitario
+            custoUnitario != null
               ? quantidade * custoUnitario
               : null,
 
           lucroBruto:
-            custoUnitario
+            custoUnitario != null
               ? (quantidade * valorUnitario) -
                 (quantidade * custoUnitario)
               : null,
@@ -185,18 +253,22 @@ export default async function handler(req, res) {
         });
 
       }
+
     }
 
     return res.status(200).json({
       total: vendas.length,
-      vendas,
+      produtosComCache: Object.keys(cacheCustos).length,
+      vendas
     });
 
   } catch (error) {
 
     return res.status(500).json({
       erro: error.message,
+      stack: error.stack
     });
 
   }
+
 }
