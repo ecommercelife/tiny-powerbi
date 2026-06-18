@@ -66,10 +66,45 @@ export default async function handler(req, res) {
       );
 
       if (!response.ok) {
+
+        historico.push({
+          idProduto: produto.id,
+          sku: produto.sku,
+          status: response.status
+        });
+
         continue;
       }
 
-      const custos = await response.json();
+      const texto = await response.text();
+
+      if (!texto) {
+
+        historico.push({
+          idProduto: produto.id,
+          sku: produto.sku,
+          erro: "Resposta vazia"
+        });
+
+        continue;
+      }
+
+      let custos;
+
+      try {
+
+        custos = JSON.parse(texto);
+
+      } catch {
+
+        historico.push({
+          idProduto: produto.id,
+          sku: produto.sku,
+          erro: "JSON inválido"
+        });
+
+        continue;
+      }
 
       if (!custos.itens) {
         continue;
@@ -89,7 +124,11 @@ export default async function handler(req, res) {
 
           precoCusto: custo.precoCusto,
 
-          custoMedio: custo.custoMedio
+          custoMedio: custo.custoMedio,
+
+          saldoAnterior: custo.saldoAnterior,
+
+          saldoAtual: custo.saldoAtual
 
         });
 
@@ -98,7 +137,6 @@ export default async function handler(req, res) {
       await new Promise(resolve =>
         setTimeout(resolve, 100)
       );
-
     }
 
     return res.status(200).json({
@@ -109,7 +147,8 @@ export default async function handler(req, res) {
   } catch (error) {
 
     return res.status(500).json({
-      erro: error.message
+      erro: error.message,
+      stack: error.stack
     });
 
   }
