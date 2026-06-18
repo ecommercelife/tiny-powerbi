@@ -27,6 +27,7 @@ export default async function handler(req, res) {
 
     const token = await getAccessToken();
 
+    // Busca apenas 1 pedido
     const response = await fetch(
       "https://api.tiny.com.br/public-api/v3/pedidos?limit=1",
       {
@@ -36,9 +37,26 @@ export default async function handler(req, res) {
       }
     );
 
-    const data = await response.json();
+    const pedidos = await response.json();
 
-    return res.status(200).json(data);
+    const primeiroPedido = pedidos.itens[0];
+
+    // Busca o detalhe desse pedido
+    const detalheResponse = await fetch(
+      `https://api.tiny.com.br/public-api/v3/pedidos/${primeiroPedido.id}`,
+      {
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
+      }
+    );
+
+    const detalhe = await detalheResponse.json();
+
+    return res.status(200).json({
+      pedidoId: primeiroPedido.id,
+      detalhe
+    });
 
   } catch (error) {
 
