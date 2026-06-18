@@ -18,6 +18,7 @@ async function getAccessToken() {
   );
 
   const data = await response.json();
+
   return data.access_token;
 }
 
@@ -26,7 +27,6 @@ export default async function handler(req, res) {
 
     const token = await getAccessToken();
 
-    // Buscar todos os pedidos
     let pedidos = [];
     let offset = 0;
     let total = 1;
@@ -53,7 +53,6 @@ export default async function handler(req, res) {
 
     let vendas = [];
 
-    // Buscar detalhes de cada pedido
     for (const pedido of pedidos) {
 
       const detalheResponse = await fetch(
@@ -81,7 +80,11 @@ export default async function handler(req, res) {
 
           data: detalhe.data,
 
-          pedidoTiny: detalhe.numeroPedido,
+          idProduto:
+            item.produto?.id || null,
+
+          pedidoTiny:
+            detalhe.numeroPedido,
 
           pedidoMarketplace:
             detalhe.ecommerce?.numeroPedidoEcommerce || "",
@@ -126,8 +129,9 @@ export default async function handler(req, res) {
 
       }
 
-      // evita rate limit do Tiny
-      await new Promise(resolve => setTimeout(resolve, 150));
+      await new Promise(resolve =>
+        setTimeout(resolve, 150)
+      );
     }
 
     return res.status(200).json({
