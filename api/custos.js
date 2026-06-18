@@ -23,88 +23,22 @@ async function getAccessToken() {
 }
 
 export default async function handler(req, res) {
-
   try {
 
     const token = await getAccessToken();
 
-    let produtos = [];
-    let offset = 0;
-    let total = 1;
-    const limit = 100;
-
-    while (offset < total) {
-
-      const response = await fetch(
-        `https://api.tiny.com.br/public-api/v3/produtos?limit=${limit}&offset=${offset}`,
-        {
-          headers: {
-            Authorization: `Bearer ${token}`,
-          },
-        }
-      );
-
-      const data = await response.json();
-
-      produtos = [...produtos, ...data.itens];
-
-      total = data.paginacao.total;
-      offset += limit;
-    }
-
-    const historico = [];
-
-    for (const produto of produtos) {
-
-      const response = await fetch(
-        `https://api.tiny.com.br/public-api/v3/produtos/${produto.id}/custos`,
-        {
-          headers: {
-            Authorization: `Bearer ${token}`,
-          },
-        }
-      );
-
-      if (!response.ok) {
-        continue;
+    const response = await fetch(
+      "https://api.tiny.com.br/public-api/v3/produtos/345335450/custos",
+      {
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
       }
+    );
 
-      const custos = await response.json();
+    const data = await response.json();
 
-      if (!custos.itens) {
-        continue;
-      }
-
-      for (const custo of custos.itens) {
-
-        historico.push({
-
-          idProduto: produto.id,
-
-          sku: produto.sku,
-
-          produto: produto.descricao,
-
-          dataCusto: custo.data,
-
-          precoCusto: custo.precoCusto,
-
-          custoMedio: custo.custoMedio
-
-        });
-
-      }
-
-      await new Promise(resolve =>
-        setTimeout(resolve, 100)
-      );
-
-    }
-
-    return res.status(200).json({
-      total: historico.length,
-      historico
-    });
+    return res.status(200).json(data);
 
   } catch (error) {
 
@@ -113,5 +47,4 @@ export default async function handler(req, res) {
     });
 
   }
-
 }
