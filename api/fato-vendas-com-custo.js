@@ -19,6 +19,10 @@ async function getAccessToken() {
 
   const data = await response.json();
 
+  if (!data.access_token) {
+    throw new Error("Não foi possível obter o access token");
+  }
+
   return data.access_token;
 }
 
@@ -28,17 +32,28 @@ function obterCustoDaVenda(dataVenda, historico) {
     return null;
   }
 
-  const vendaData = new Date(dataVenda);
+  const venda = String(dataVenda).substring(0, 10);
 
   const custosValidos = historico
-    .filter(c => new Date(c.data) <= vendaData)
-    .sort((a, b) => new Date(b.data) - new Date(a.data));
+    .filter(c => String(c.data).substring(0, 10) <= venda)
+    .sort((a, b) =>
+      String(b.data).localeCompare(String(a.data))
+    );
 
   if (custosValidos.length === 0) {
     return null;
   }
 
   return custosValidos[0];
+}
+
+function arredondar(valor) {
+
+  if (valor === null || valor === undefined) {
+    return null;
+  }
+
+  return Number(Number(valor).toFixed(2));
 }
 
 export default async function handler(req, res) {
@@ -63,17 +78,22 @@ export default async function handler(req, res) {
         }
       );
 
+      if (!response.ok) {
+        throw new Error(`Erro ao listar pedidos: ${response.status}`);
+      }
+
       const data = await response.json();
 
-      pedidos = [...pedidos, ...data.itens];
+      pedidos = [...pedidos, ...(data.itens || [])];
 
-      total = data.paginacao.total;
+      total = data.paginacao?.total || 0;
+
       offset += limit;
     }
 
     const cacheCustos = {};
 
-    let vendas = [];
+    const vendas = [];
 
     for (const pedido of pedidos) {
 
@@ -92,7 +112,7 @@ export default async function handler(req, res) {
 
       const detalhe = await detalheResponse.json();
 
-      if (!detalhe.itens) {
+      if (!detalhe.itens || detalhe.itens.length === 0) {
         continue;
       }
 
@@ -103,78 +123,70 @@ export default async function handler(req, res) {
         let custoUnitario = null;
         let custoMedio = null;
 
-        if (!cacheCustos[idProduto]) {
+        if (idProduto) {
 
-          try {
+          if (!cacheCustos[idProduto]) {
 
-            const custoResponse = await fetch(
-              `https://api.tiny.com.br/public-api/v3/produtos/${idProduto}/custos`,
-              {
-                headers: {
-                  Authorization: `Bearer ${token}`,
-                },
-              }
-            );
+            try {
 
-            if (!custoResponse.ok) {
+              const custoResponse = await fetch(
+                `https://api.tiny.com.br/public-api/v3/produtos/${idProduto}/custos`,
+                {
+                  headers: {
+                    Authorization: `Bearer ${token}`,
+                  },
+                }
+              );
 
-              cacheCustos[idProduto] = {
-                erro: `HTTP ${custoResponse.status}`
-              };
+              if (custoResponse.ok) {
 
-            } else {
+                const texto = await custoResponse.text();
 
-              const texto = await custoResponse.text();
+                if (texto) {
 
-              if (!texto) {
+                  try {
 
-                cacheCustos[idProduto] = {
-                  erro: "Resposta vazia"
-                };
+                    cacheCustos[idProduto] = JSON.parse(texto);
 
-              } else {
+                  } catch {
 
-                try {
+                    cacheCustos[idProduto] = {
+                      itens: []
+                    };
 
-                  cacheCustos[idProduto] = JSON.parse(texto);
+                  }
 
-                } catch {
+                } else {
 
                   cacheCustos[idProduto] = {
-                    erro: "JSON inválido"
+                    itens: []
                   };
 
                 }
 
+              } else {
+
+                cacheCustos[idProduto] = {
+                  itens: []
+                };
+
               }
+
+            } catch {
+
+              cacheCustos[idProduto] = {
+                itens: []
+              };
 
             }
 
-            await new Promise(resolve =>
-              setTimeout(resolve, 100)
-            );
-
-          } catch (e) {
-
-            cacheCustos[idProduto] = {
-              erro: e.message
-            };
-
           }
 
-        }
-
-        const custoData = cacheCustos[idProduto];
-
-        if (
-          custoData &&
-          custoData.itens &&
-          custoData.itens.length > 0
-        ) {
+          const historico = cacheCustos[idProduto];
 
           const custoHistorico = obterCustoDaVenda(
             detalhe.data,
-            custoData.itens
+            historico.itens
           );
 
           if (custoHistorico) {
@@ -186,8 +198,21 @@ export default async function handler(req, res) {
 
         }
 
-        const quantidade = item.quantidade || 0;
-        const valorUnitario = item.valorUnitario || 0;
+        const quantidade = Number(item.quantidade || 0);
+        const valorUnitario = Number(item.valorUnitario || 0);
+
+        const receitaBruta =
+          quantidade * valorUnitario;
+
+        const cmv =
+          custoUnitario !== null
+            ? quantidade * custoUnitario
+            : null;
+
+        const lucroBruto =
+          cmv !== null
+            ? receitaBruta - cmv
+            : null;
 
         vendas.push({
 
@@ -215,34 +240,32 @@ export default async function handler(req, res) {
 
           quantidade,
 
-          valorUnitario,
+          valorUnitario:
+            arredondar(valorUnitario),
 
           receitaBruta:
-            quantidade * valorUnitario,
+            arredondar(receitaBruta),
 
-          custoUnitario,
+          custoUnitario:
+            arredondar(custoUnitario),
 
-          custoMedio,
+          custoMedio:
+            arredondar(custoMedio),
 
           cmv:
-            custoUnitario != null
-              ? quantidade * custoUnitario
-              : null,
+            arredondar(cmv),
 
           lucroBruto:
-            custoUnitario != null
-              ? (quantidade * valorUnitario) -
-                (quantidade * custoUnitario)
-              : null,
+            arredondar(lucroBruto),
 
           valorFrete:
-            detalhe.valorFrete || 0,
+            arredondar(detalhe.valorFrete || 0),
 
           valorDesconto:
-            detalhe.valorDesconto || 0,
+            arredondar(detalhe.valorDesconto || 0),
 
           valorOutrasDespesas:
-            detalhe.valorOutrasDespesas || 0,
+            arredondar(detalhe.valorOutrasDespesas || 0),
 
           cidade:
             detalhe.cliente?.endereco?.municipio || "",
@@ -253,7 +276,6 @@ export default async function handler(req, res) {
         });
 
       }
-
     }
 
     return res.status(200).json({
