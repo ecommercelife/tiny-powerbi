@@ -26,18 +26,32 @@ export default async function handler(req, res) {
   try {
     const token = await getAccessToken();
 
-    const response = await fetch(
-      "https://api.tiny.com.br/public-api/v3/produtos?limit=10",
-      {
-        headers: {
-          Authorization: `Bearer ${token}`,
-        },
-      }
-    );
+    let produtos = [];
+    let offset = 0;
+    let total = 1;
+    const limit = 100;
 
-    const data = await response.json();
+    while (offset < total) {
+      const response = await fetch(
+        `https://api.tiny.com.br/public-api/v3/produtos?limit=${limit}&offset=${offset}`,
+        {
+          headers: {
+            Authorization: `Bearer ${token}`,
+          },
+        }
+      );
 
-    return res.status(200).json(data);
+      const data = await response.json();
+
+      produtos = [...produtos, ...data.itens];
+      total = data.paginacao.total;
+      offset += limit;
+    }
+
+    return res.status(200).json({
+      total: produtos.length,
+      produtos,
+    });
   } catch (error) {
     return res.status(500).json({
       erro: error.message,
