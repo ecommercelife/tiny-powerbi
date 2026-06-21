@@ -50,12 +50,21 @@ export default async function handler(req, res) {
 
     if (!tokenData.refresh_token) {
 
-      return res.status(500).json({
-        erro: "Tiny não retornou refresh token",
-        retorno: tokenData
-      });
+  return res.status(500).json({
 
-    }
+    erro: "Tiny não retornou refresh token",
+
+    retorno: tokenData,
+
+    clientIdInicio:
+      process.env.TINY_CLIENT_ID.substring(0,25),
+
+    redirectUri:
+      "https://tiny-powerbi.vercel.app/api/callback"
+
+  });
+
+}
 
     const supabaseUrl =
       process.env.SUPABASE_URL;
